@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Barcode + QR Generator</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    background: linear-gradient(135deg, #9fa8b3, #5c6670);
+    color: #fff;
+    padding: 30px;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  body.popup-open { overflow: hidden; }
+  .container {
+    max-width: 520px;
+    margin: auto;
+    background: rgba(255,255,255,0.08);
+    padding: 20px;
+    border-radius: 12px;
+    backdrop-filter: blur(6px);
+  }
+  select, input {
+    width: 100%;
+    padding: 11px;
+    margin: 10px 0;
+    border-radius: 6px;
+    border: none;
+  }
+  button {
+    width: 100%;
+    padding: 12px;
+    background: #2d3136;
+    color: #fff;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    margin-top: 10px;
+    transition: background 0.2s;
+  }
+  button:hover { background: #3c4045; }
+  #output img {
+    margin-top: 15px;
+    padding: 12px;
+    background: #fff;
+    border-radius: 8px;
+  }
+  #output { text-align: center; margin-top: 20px; }
+
+  .code-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    width: 100%;
+  }
+  .code-row input { grid-column: 1 / 3; }
+  .code-row .small-btn {
+    width: 100%;
+    padding: 10px;
+    font-size: 15px;
+  }
+
+  .spinner {
+    display: none;
+    margin: 10px auto;
+    border: 4px solid rgba(255,255,255,0.3);
+    border-top: 4px solid #fff;
+    border-radius: 50%;
+    width: 35px;
+    height: 35px;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { 100% { transform: rotate(360deg); } }
+</style>
+
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+
+<body>
+<div class="container">
+  <h2 style="line-height: 1.3; color: #000;">
+  <span style="font-size: 32px; font-weight: bold; color: #000;">Barcode Generator</span><br>
+  <span style="font-size: 18px; opacity: 0.9; color: #000;">RJ Bana Sari-sari Store</span>
+</h2>
+
+  <input type="text" id="label" placeholder="Enter Item Label (optional)" maxlength="24" />
+
+<!-- Combined Barcode/QR and Digit Length in one line -->
+<div style="display: flex; gap: 10px; width: 100%;">
+  <select id="type" style="flex: 1;">
+    <option value="barcode">Barcode</option>
+    <option value="qrcode">QR Code</option>
+  </select>
+
+  <select id="digitLength" style="flex: 1;">
+    <option value="6">6 Digits</option>
+    <option value="8" selected>8 Digits</option>
+    <option value="10">10 Digits</option>
+    <option value="12">12 Digits</option>
+  </select>
+</div>
+
+  
+<script>
+/* ✅ Ensure correct state when page loads */
+function togglePriceInput() {
+  const show = document.getElementById("priceOption").value === "yes";
+  document.getElementById("price").style.display = show ? "block" : "none";
+}
+window.addEventListener("DOMContentLoaded", () => togglePriceInput());
+</script>
+  <div class="code-row">
+    <input type="text" id="code" placeholder="Enter Code Number" maxlength="12" />
+    <button class="small-btn" onclick="autoFillCode()">Auto gen code</button>
+    <button class="small-btn" onclick="copyCode()">Copy code</button>
+  </div>
+
+<!-- ✅ NEW: Price Option (Default With Price Tag) -->
+<select id="priceOption" onchange="togglePriceInput()">
+  <option value="no">Without Price Tag</option>
+  <option value="yes" selected>With Price Tag</option>
+</select>
+
+<!-- ✅ Price input visible by default -->
+<input type="number" id="price" placeholder="Enter Price" style="display:block;" />
+
+
+  <input type="number" id="barcodeHeight" placeholder="Barcode Height (30–150, default 60)" />
+
+  <button onclick="generate()">Generate</button>
+  <button id="btnImg" onclick="downloadImage()" disabled>Download Image</button>
+  <button id="btnPdf" onclick="downloadPDF()" disabled>Download PDF</button>
+  <button onclick="clearAll()">Clear</button>
+
+  <div class="spinner" id="spinner"></div>
+  <div id="output"></div>
+</div>
+
+<script>
+let generatedImg = null;
+
+/* Toggle Price Input */
+function togglePriceInput() {
+  const show = document.getElementById("priceOption").value === "yes";
+  document.getElementById("price").style.display = show ? "block" : "none";
+}
+
+/* Auto Fill */
+function autoFillCode() {
+  const len = parseInt(document.getElementById("digitLength").value);
+  const min = 10 ** (len - 1);
+  const max = 10 ** len - 1;
+  document.getElementById("code").value = Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+/* Copy */
+function copyCode() {
+  const code = document.getElementById("code").value.trim();
+  if (!code) return alert("No code to copy!");
+  navigator.clipboard.writeText(code);
+}
+
+/* Validate */
+function validateCode(code) {
+  return /^[0-9]{6}$|^[0-9]{8}$|^[0-9]{10}$|^[0-9]{12}$/.test(code);
+}
+
+/* Clear */
+function clearAll() {
+  document.getElementById("code").value = "";
+  document.getElementById("label").value = "";
+  document.getElementById("price").value = "";
+  document.getElementById("output").innerHTML = "";
+  generatedImg = null;
+  document.getElementById("btnImg").disabled = true;
+  document.getElementById("btnPdf").disabled = true;
+}
+
+/* Spinner Control */
+const showSpinner = () => document.getElementById("spinner").style.display = "block";
+const hideSpinner = () => document.getElementById("spinner").style.display = "none";
+
+/* Generate */
+function generate() {
+  const type = document.getElementById("type").value;
+  const label = document.getElementById("label").value.trim();
+  const code = document.getElementById("code").value.trim();
+  const showPrice = document.getElementById("priceOption").value === "yes";
+  const price = document.getElementById("price").value.trim();
+
+  if (!validateCode(code)) return alert("Code must be 6, 8, 10, or 12 digits only.");
+
+  document.getElementById("output").innerHTML = "";
+  generatedImg = null;
+  showSpinner();
+
+  setTimeout(() => {
+    if (type === "barcode") generateBarcode(code, label, showPrice, price);
+    else generateQR(code, label);
+  }, 100);
+}
+
+/* Barcode Generator (with price) */
+function generateBarcode(code, label, showPrice, price) {
+  const userHeight = parseInt(document.getElementById("barcodeHeight").value);
+  const barcodeHeight = Math.min(150, Math.max(30, userHeight || 60));
+
+  const topPadding = label ? 32 : 15;
+  const bottomPadding = showPrice ? 55 : 32;
+  const totalHeight = topPadding + barcodeHeight + bottomPadding;
+
+  const scale = 2;
+  const canvas = document.createElement("canvas");
+  canvas.width = 420 * scale;
+  canvas.height = totalHeight * scale;
+
+  const ctx = canvas.getContext("2d");
+  ctx.scale(scale, scale);
+  ctx.fillStyle = "#000";
+  ctx.font = "20px Arial";
+  ctx.textAlign = "center";
+
+  const barcodeCanvas = document.createElement("canvas");
+  JsBarcode(barcodeCanvas, code, {
+    format: "CODE128",
+    displayValue: false,
+    height: barcodeHeight,
+    width: 2,
+    margin: 0
+  });
+
+  const xCenter = (canvas.width / scale - barcodeCanvas.width) / 2;
+  if (label) ctx.fillText(label, canvas.width / (2 * scale), topPadding - 10);
+  ctx.drawImage(barcodeCanvas, xCenter, topPadding);
+  ctx.fillText(code, canvas.width / (2 * scale), topPadding + barcodeHeight + 22);
+  if (showPrice && price) ctx.fillText(`₱${price}`, canvas.width / (2 * scale), topPadding + barcodeHeight + 45);
+
+  generatedImg = canvas.toDataURL("image/png");
+  displayGeneratedImage();
+  hideSpinner();
+}
+
+/* QR Generator */
+/* QR CODE (Updated to include optional price tag) */
+function generateQR(code, label) {
+  const showPrice = document.getElementById("priceOption").value === "yes";
+  const price = document.getElementById("price").value.trim();
+
+  const tempCanvas = document.createElement("canvas");
+  QRCode.toCanvas(tempCanvas, code, { margin: 2 }, err => {
+    if (err) return alert("QR generation failed: " + err.message);
+
+    const size = tempCanvas.width;
+    const extraHeight = 60 + (showPrice && price ? 25 : 0); // space for price
+    const finalCanvas = document.createElement("canvas");
+    const scale = 2;
+    finalCanvas.width = size * scale;
+    finalCanvas.height = (size + extraHeight) * scale;
+
+    const ctx = finalCanvas.getContext("2d");
+    ctx.scale(scale, scale);
+    ctx.fillStyle = "#000";
+    ctx.font = "20px Arial";
+    ctx.textAlign = "center";
+
+    if (label) ctx.fillText(label, size / 2, 25);
+    ctx.drawImage(tempCanvas, 0, 35);
+    ctx.fillText(code, size / 2, size + 55);
+
+    // ✅ Added: Draw price if enabled
+    if (showPrice && price) {
+      ctx.fillText(`$${price}`, size / 2, size + 80);
+    }
+
+    generatedImg = finalCanvas.toDataURL("image/png");
+    displayGeneratedImage();
+    hideSpinner();
+    document.getElementById("btnImg").disabled = false;
+    document.getElementById("btnPdf").disabled = false;
+  });
+}
+
+/* Display Generated Image */
+function displayGeneratedImage() {
+  const img = document.createElement("img");
+  img.src = generatedImg;
+  img.style.maxWidth = "100%";
+  document.getElementById("output").appendChild(img);
+  document.getElementById("btnImg").disabled = false;
+  document.getElementById("btnPdf").disabled = false;
+}
+
+/* ✅ FIXED: Download Image */
+function downloadImage() {
+  if (!generatedImg) return alert("No image generated yet!");
+  const labelInput = document.getElementById("label").value.trim();
+  const codeInput = document.getElementById("code").value.trim();
+  const name = labelInput || codeInput || "barcode";
+  const a = document.createElement("a");
+  a.href = generatedImg;
+  a.download = `${name}.png`;
+  a.click();
+}
+
+/* ✅ FIXED: Download PDF */
+async function downloadPDF() {
+  if (!generatedImg) return alert("No image generated yet!");
+  const labelInput = document.getElementById("label").value.trim();
+  const codeInput = document.getElementById("code").value.trim();
+  const name = labelInput || codeInput || "barcode";
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF("p", "mm", "a4");
+
+  const img = new Image();
+  img.src = generatedImg;
+  await new Promise(r => img.onload = r);
+
+  const pxToMM = px => (px * 25.4) / 96;
+  const imgWmm = pxToMM(img.naturalWidth);
+  const imgHmm = pxToMM(img.naturalHeight);
+  const targetW = 30;
+  const scaleFactor = targetW / imgWmm;
+  const finalW = imgWmm * scaleFactor;
+  const finalH = imgHmm * scaleFactor;
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
+  const spacing = 4;
+  const cols = 8;
+  const rows = Math.max(1, Math.floor((pageH - spacing) / (finalH + spacing)));
+
+  let y = spacing;
+  for (let r = 0; r < rows; r++) {
+    let x = spacing;
+    for (let c = 0; c < cols; c++) {
+      pdf.addImage(img, "PNG", x, y, finalW, finalH);
+      x += finalW + spacing;
+    }
+    y += finalH + spacing;
+  }
+  pdf.save(`${name}.pdf`);
+}
+</script>
+</body>
+</html>
